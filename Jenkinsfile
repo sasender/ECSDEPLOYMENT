@@ -1,6 +1,12 @@
 pipeline {
-    agent any
-	
+    agent {label 'slave' }
+	  environment {
+        AWS_ACCOUNT_ID="204415123180"
+        AWS_DEFAULT_REGION="us-east-1" 
+        IMAGE_REPO_NAME="practise"
+        IMAGE_TAG="latest"
+        REPOSITORY_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}"
+    }
 	  tools
     {
        maven "Maven"
@@ -9,7 +15,7 @@ pipeline {
       stage('checkout') {
            steps {
              
-                git branch: 'master', url: 'https://github.com/devops4solutions/CI-CD-using-Docker.git'
+                git branch: 'master', url: 'https://github.com/sasender/ECSDEPLOYMENT.git'
              
           }
         }
@@ -21,42 +27,32 @@ pipeline {
         }
         
 
-  stage('Docker Build and Tag') {
-           steps {
-              
-                sh 'docker build -t samplewebapp:latest .' 
-                sh 'docker tag samplewebapp nikhilnidhi/samplewebapp:latest'
-                //sh 'docker tag samplewebapp nikhilnidhi/samplewebapp:$BUILD_NUMBER'
-               
-          }
-        }
-     
-  stage('Publish image to Docker Hub') {
-          
+  stages {
+        
+         stage('Logging into AWS ECR') {
             steps {
-        withDockerRegistry([ credentialsId: "dockerHub", url: "" ]) {
-          sh  'docker push nikhilnidhi/samplewebapp:latest'
-        //  sh  'docker push nikhilnidhi/samplewebapp:$BUILD_NUMBER' 
-        }
-                  
-          }
-        }
-     
-      stage('Run Docker container on Jenkins Agent') {
-             
-            steps 
-			{
-                sh "docker run -d -p 8003:8080 nikhilnidhi/samplewebapp"
- 
+                script {
+                sh "sudo aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+                }
+                 
             }
         }
- stage('Run Docker container on remote hosts') {
-             
-            steps {
-                sh "docker -H ssh://jenkins@172.31.28.25 run -d -p 8003:8080 nikhilnidhi/samplewebapp"
- 
-            }
+     
+  stage('Building image') {
+      steps{
+        script {
+          dockerImage = docker.build "${IMAGE_REPO_NAME}:${IMAGE_TAG}"
         }
+      }
     }
-	}
-    
+     
+      stage('Pushing to ECR') {
+     steps{  
+         script {
+                sh "docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${REPOSITORY_URI}:$IMAGE_TAG"
+                sh "docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}"
+            }
+        }
+      }
+    }
+}
